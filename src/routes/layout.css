@@ -1,0 +1,62 @@
+@import 'tailwindcss';
+
+@theme {
+	--color-bg: #14161a;
+	--color-surface: #1b1e24;
+	--color-surface-2: #22262e;
+	--color-line: #2a2f37;
+	--color-text: #e8eaed;
+	--color-muted: #8b93a1;
+	--color-accent: #fa6831;
+	--color-accent-dim: #b34a24;
+	--color-ok: #3fce8a;
+	--color-warn: #f5b840;
+	--color-danger: #f0524d;
+
+	--font-display: 'Chakra Petch', sans-serif;
+	--font-sans: 'IBM Plex Sans Variable', sans-serif;
+	--font-mono: 'IBM Plex Mono', monospace;
+}
+
+:root {
+	color-scheme: dark;
+}
+
+body {
+	@apply bg-bg text-text font-sans antialiased;
+}
+
+/* Signature: layer-line progress track — printed-layer tick texture */
+.layer-track {
+	background-image: repeating-linear-gradient(
+		90deg,
+		var(--color-line) 0,
+		var(--color-line) 3px,
+		transparent 3px,
+		transparent 6px
+	);
+}
+
+.layer-fill {
+	background-image: repeating-linear-gradient(
+		90deg,
+		currentColor 0,
+		currentColor 3px,
+		color-mix(in srgb, currentColor 55%, transparent) 3px,
+		color-mix(in srgb, currentColor 55%, transparent) 6px
+	);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		transition-duration: 0.01ms !important;
+	}
+
+	/* Loading spinners carry meaning — slow them right down instead of killing them. */
+	.animate-spin {
+		animation-duration: 1.6s !important;
+	}
+}
