@@ -62,6 +62,25 @@ Requires `ffmpeg` (`sudo apt install ffmpeg`). Set the vision services' env:
 Settings), and leave the vision service's own Telegram notifier off — the
 platform sends the alerts.
 
+### Why only the database is in compose
+
+The app runs natively on the Jetson; `docker-compose.yml` holds nothing but
+PostgreSQL. Reasons, in rough order of weight:
+
+- It talks to LAN hardware — PrusaLink printers, a vision service per camera,
+  the robot gateway on the robot itself. Staying on the host keeps those
+  addresses the same ones you type into Settings.
+- `src/lib/server/timelapse.ts` spawns `ffmpeg` directly, so a container image
+  would have to carry it (and, on the Jetson, match its hardware encoders).
+- Uploads, failure frames and timelapses live under `DATA_DIR` (`./data`),
+  simpler as a plain directory than as a bind mount.
+- `DATABASE_URL` points at `localhost:5434`, the published port, so one value
+  works for `npm run dev` and for the deployed process alike.
+
+Containerizing the app isn't ruled out — it would need a Dockerfile carrying
+ffmpeg, `DATABASE_URL` switched to `db:5432`, and a decision about how the
+container reaches the printers.
+
 The robot side lives in
 `yahboom_rosmaster_x3plus/src/yahboom_rosmaster/robot_gateway/` (see its
 README for build + systemd).
