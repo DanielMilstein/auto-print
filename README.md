@@ -87,6 +87,31 @@ sudo systemctl daemon-reload && sudo systemctl enable --now autoprint
 journalctl -u autoprint -f
 ```
 
+#### Updating after a push
+
+Nothing on the Jetson reacts to a `git push`; pull and rebuild there:
+
+```bash
+cd /home/lab-prototipos/Desktop/proyecto-de-titulo/auto-print
+git pull
+npm ci && npm run build          # from a login shell, so the nvm Node (>= 20.19) is used
+sudo systemctl restart autoprint
+journalctl -u autoprint -f
+```
+
+- The restart is the migration step: `src/lib/server/db/migrate.ts` bundles
+  `src/lib/server/db/migrations/*.sql` at build time and applies the pending
+  ones on boot, so a new migration needs only the rebuild and restart. Postgres
+  (`docker compose up -d`) must be running.
+- Build with the same Node that `ExecStart=` in the unit points at. A non-login
+  shell (cron, ssh with a bare command) picks the apt Node and the build fails
+  with `SyntaxError: Unexpected reserved word`.
+- Only when `deploy/nginx/autoprint.conf` or `deploy/autoprint.service`
+  changed: copy them to `/etc` again, re-apply the hand-edited `User=`,
+  `WorkingDirectory=`, `EnvironmentFile=` and `ExecStart=` values, then
+  `sudo nginx -t && sudo systemctl reload nginx` or
+  `sudo systemctl daemon-reload && sudo systemctl restart autoprint`.
+
 `npm start` (`node --env-file=.env build`) runs the same thing in the
 foreground. The `.env` production block sets `HOST=127.0.0.1`,
 `PROTOCOL_HEADER`, `HOST_HEADER`, `ADDRESS_HEADER` and
@@ -97,7 +122,7 @@ trust the headers, set `ORIGIN=https://<jetson>.<tailnet>.ts.net` instead.
 Add to root's crontab so the certificate is renewed before it expires:
 
 ```
-0 4 * * * /home/jetson/auto-print/deploy/renew-tailscale-cert.sh >> /var/log/autoprint-cert.log 2>&1
+0 4 * * * /home/lab-prototipos/Desktop/proyecto-de-titulo/auto-print/deploy/renew-tailscale-cert.sh >> /var/log/autoprint-cert.log 2>&1
 ```
 
 Set the vision services' env: `HTTP_POST_URL` / `HTTP_POST_HEADERS_JSON` per
