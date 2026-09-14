@@ -1,7 +1,7 @@
 # systemd unit for Autoprint (node process behind nginx).
 #
 #   sudo cp deploy/autoprint.service /etc/systemd/system/autoprint.service
-#   # edit User=, WorkingDirectory= and EnvironmentFile= below
+#   # edit User=, WorkingDirectory=, EnvironmentFile= and the node path in ExecStart= below
 #   sudo systemctl daemon-reload && sudo systemctl enable --now autoprint
 #   journalctl -u autoprint -f
 
@@ -12,12 +12,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=jetson
-WorkingDirectory=/home/jetson/auto-print
+User=lab-prototipos
+WorkingDirectory=/home/lab-prototipos/Desktop/proyecto-de-titulo/auto-print
 # HOST/PORT/PROTOCOL_HEADER/HOST_HEADER/BODY_SIZE_LIMIT etc. live here (see .env.example).
-EnvironmentFile=/home/jetson/auto-print/.env
+EnvironmentFile=/home/lab-prototipos/Desktop/proyecto-de-titulo/auto-print/.env
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/env node build
+# systemd does not load nvm, so `env node` finds the old apt Node and the build fails with
+# "SyntaxError: Unexpected reserved word" (top-level await). Point at the Node >= 20.19 that
+# ran `npm run build`: `readlink -f "$(which node)"` in your shell prints the path to use.
+ExecStart=/home/lab-prototipos/.nvm/versions/node/v22.12.0/bin/node build
 Restart=always
 RestartSec=3
 

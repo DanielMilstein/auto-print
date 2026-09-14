@@ -81,7 +81,8 @@ sudo nginx -t && sudo systemctl reload nginx
 docker compose up -d                        # PostgreSQL on :5434
 cp .env.example .env                        # keep the "Production behind nginx" block
 npm ci && npm run build
-sudo cp deploy/autoprint.service /etc/systemd/system/   # edit User/WorkingDirectory/EnvironmentFile
+readlink -f "$(which node)"                  # put this Node (>= 20.19) path in ExecStart= of the unit
+sudo cp deploy/autoprint.service /etc/systemd/system/   # edit User/WorkingDirectory/EnvironmentFile/ExecStart
 sudo systemctl daemon-reload && sudo systemctl enable --now autoprint
 journalctl -u autoprint -f
 ```
