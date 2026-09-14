@@ -1,0 +1,25 @@
+# systemd unit for Autoprint (node process behind nginx).
+#
+#   sudo cp deploy/autoprint.service /etc/systemd/system/autoprint.service
+#   # edit User=, WorkingDirectory= and EnvironmentFile= below
+#   sudo systemctl daemon-reload && sudo systemctl enable --now autoprint
+#   journalctl -u autoprint -f
+
+[Unit]
+Description=Autoprint 3D print farm controller
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jetson
+WorkingDirectory=/home/jetson/auto-print
+# HOST/PORT/PROTOCOL_HEADER/HOST_HEADER/BODY_SIZE_LIMIT etc. live here (see .env.example).
+EnvironmentFile=/home/jetson/auto-print/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/env node build
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

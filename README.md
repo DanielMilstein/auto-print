@@ -51,16 +51,60 @@ Simulate a detected failure:
 
 ## Deployment (Jetson)
 
+The app runs as a plain node process on `127.0.0.1:3000` behind nginx, which
+terminates HTTPS with a certificate issued by Tailscale. Open it at
+**`https://<jetson>.<tailnet>.ts.net`** (the MagicDNS name from
+`tailscale status`), not at the raw Tailscale IP: the certificate is only valid
+for that name.
+
+Why the proxy setup matters: SvelteKit rejects every form POST whose `Origin`
+header differs from the origin it thinks it is serving
+(`Cross-site POST form submissions are forbidden`). adapter-node derives that
+origin from `X-Forwarded-Proto` / `X-Forwarded-Host` when `PROTOCOL_HEADER` /
+`HOST_HEADER` are set, and otherwise assumes `https`. Serving plain http on
+`:3000` with none of them set therefore breaks every action in the UI.
+
+Prerequisites: MagicDNS and **HTTPS Certificates** enabled for the tailnet
+(admin console → DNS), plus `sudo apt install nginx ffmpeg`.
+
 ```bash
-docker compose up -d
-npm install && npm run build
-node build                    # or a systemd unit; port 3000
+# 1. certificate (also installs into /etc/ssl/tailscale; rerun daily from cron, see script)
+sudo deploy/renew-tailscale-cert.sh
+
+# 2. nginx — replace JETSON.TAILNET.ts.net in the file with your MagicDNS name
+sudo cp deploy/nginx/autoprint.conf /etc/nginx/sites-available/autoprint
+sudo ln -s /etc/nginx/sites-available/autoprint /etc/nginx/sites-enabled/autoprint
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+
+# 3. app
+docker compose up -d                        # PostgreSQL on :5434
+cp .env.example .env                        # keep the "Production behind nginx" block
+npm ci && npm run build
+sudo cp deploy/autoprint.service /etc/systemd/system/   # edit User/WorkingDirectory/EnvironmentFile
+sudo systemctl daemon-reload && sudo systemctl enable --now autoprint
+journalctl -u autoprint -f
 ```
 
-Requires `ffmpeg` (`sudo apt install ffmpeg`). Set the vision services' env:
-`HTTP_POST_URL` / `HTTP_POST_HEADERS_JSON` per printer (values shown in
-Settings), and leave the vision service's own Telegram notifier off — the
-platform sends the alerts.
+`npm start` (`node --env-file=.env build`) runs the same thing in the
+foreground. The `.env` production block sets `HOST=127.0.0.1`,
+`PROTOCOL_HEADER`, `HOST_HEADER`, `ADDRESS_HEADER` and
+`BODY_SIZE_LIMIT=Infinity` (adapter-node otherwise caps request bodies at
+512 KB, which blocks g-code uploads). If you would rather pin the origin than
+trust the headers, set `ORIGIN=https://<jetson>.<tailnet>.ts.net` instead.
+
+Add to root's crontab so the certificate is renewed before it expires:
+
+```
+0 4 * * * /home/jetson/auto-print/deploy/renew-tailscale-cert.sh >> /var/log/autoprint-cert.log 2>&1
+```
+
+Set the vision services' env: `HTTP_POST_URL` / `HTTP_POST_HEADERS_JSON` per
+printer (values shown in Settings; they now carry the https MagicDNS origin).
+A vision service running on the Jetson itself can also post to
+`http://127.0.0.1:3000/api/webhooks/vision/<id>` (JSON webhooks are not subject
+to the form CSRF check). Leave the vision service's own Telegram notifier off —
+the platform sends the alerts.
 
 ### Why only the database is in compose
 
