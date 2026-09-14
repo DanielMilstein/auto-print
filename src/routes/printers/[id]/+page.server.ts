@@ -6,6 +6,11 @@ import { adapterFor } from '$lib/server/printers';
 import { storage } from '$lib/server/storage';
 import { getActiveBatch } from '$lib/server/batches';
 import { cancelBatch, resumeBatch, startBatch } from '$lib/server/orchestrator/batch';
+import {
+	cancelManualJob,
+	getManualJob,
+	startManualJob
+} from '$lib/server/orchestrator/manual-robot';
 
 async function requirePrinter(id: string): Promise<Printer> {
 	const printer = await getPrinter(Number(id));
@@ -20,7 +25,11 @@ async function requirePrinter(id: string): Promise<Printer> {
  */
 export const load: PageServerLoad = async ({ params }) => {
 	const printer = await requirePrinter(params.id);
-	return { printer, batch: await getActiveBatch(printer.id) };
+	return {
+		printer,
+		batch: await getActiveBatch(printer.id),
+		manualJob: getManualJob(printer.id)
+	};
 };
 
 /**
@@ -100,5 +109,17 @@ export const actions: Actions = {
 	batchCancel: control(async (p, form) => {
 		await cancelBatch(Number(form.get('batchId')));
 		return 'Batch cancelled.';
+	}),
+	robotRemove: control(async (p) => {
+		await startManualJob(p, 'pick_place');
+		return 'Robot removal started.';
+	}),
+	robotReturnToOrigin: control(async (p) => {
+		await startManualJob(p, 'return_to_origin');
+		return 'Return to origin started.';
+	}),
+	robotCancel: control(async (p) => {
+		await cancelManualJob(p);
+		return 'Robot job cancelled.';
 	})
 };

@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { getPrinter } from '$lib/server/printers/repo';
 import { adapterFor } from '$lib/server/printers';
 import { getActiveBatch } from '$lib/server/batches';
+import { getManualJob } from '$lib/server/orchestrator/manual-robot';
 import type { PrinterStatus } from '$lib/server/printers/adapter';
 
 export const GET: RequestHandler = async ({ params }) => {
@@ -15,5 +16,10 @@ export const GET: RequestHandler = async ({ params }) => {
 	} catch {
 		status = { state: 'OFFLINE' };
 	}
-	return json({ printerId: printer.id, status, batch: await getActiveBatch(printer.id) });
+	return json({
+		printerId: printer.id,
+		status,
+		batch: await getActiveBatch(printer.id),
+		manualJob: getManualJob(printer.id)
+	});
 };

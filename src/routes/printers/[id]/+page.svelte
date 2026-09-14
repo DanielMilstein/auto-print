@@ -22,16 +22,30 @@
 		phase: string;
 	}
 
+	interface ManualJobInfo {
+		jobId: string;
+		kind: 'pick_place' | 'return_to_origin';
+		status: 'running' | 'succeeded' | 'failed' | 'cancelled';
+		startedAt: number;
+		finishedAt?: number;
+		logTail: string[];
+	}
+
 	let status = $state<PrinterStatus | null>(null);
 	let batch = $state<BatchInfo | null>(data.batch as BatchInfo | null);
+	let manualJob = $state<ManualJobInfo | null>(data.manualJob as ManualJobInfo | null);
+	// Ticks with the poll so the job's elapsed time keeps moving.
+	let now = $state(Date.now());
 
 	async function poll() {
+		now = Date.now();
 		try {
 			const res = await fetch(`/api/printers/${data.printer.id}/state`);
 			if (res.ok) {
 				const body = await res.json();
 				status = body.status;
 				batch = body.batch;
+				manualJob = body.manualJob;
 			}
 		} catch {
 			// transient poll failure; next tick retries
@@ -48,6 +62,8 @@
 	const canPause = $derived(status?.state === 'PRINTING');
 	const canResume = $derived(status?.state === 'PAUSED' || status?.state === 'ATTENTION');
 	const canStop = $derived(!!job && ['PRINTING', 'PAUSED', 'ATTENTION'].includes(status?.state ?? ''));
+	// Bed occupied and the head in the way — mirrors the server-side guard.
+	const printerBusy = $derived(['PRINTING', 'PAUSED', 'ATTENTION'].includes(status?.state ?? ''));
 
 	function fmtTime(sec?: number): string {
 		if (sec == null) return '—';
@@ -55,6 +71,33 @@
 		const m = Math.round((sec % 3600) / 60);
 		return h > 0 ? `${h}h ${m}m` : `${m}m`;
 	}
+
+	/** m:ss, clamped — `startedAt` is the server's clock, the browser's may differ. */
+	function fmtElapsed(ms: number): string {
+		const s = Math.max(0, Math.round(ms / 1000));
+		return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+	}
+
+	const JOB_VERB = {
+		pick_place: { running: 'Removing…', done: 'Removal' },
+		return_to_origin: { running: 'Returning to origin…', done: 'Return to origin' }
+	} as const;
+
+	const jobTone = $derived(
+		manualJob?.status === 'succeeded'
+			? 'text-ok'
+			: manualJob?.status === 'running'
+				? 'text-text'
+				: 'text-danger'
+	);
+
+	// Follow the log as the gateway appends to it, but only while it is running —
+	// once it settles the operator is reading, and yanking the scroll is rude.
+	let logBox = $state<HTMLPreElement | null>(null);
+	$effect(() => {
+		const lines = manualJob?.logTail.length ?? 0;
+		if (logBox && manualJob?.status === 'running' && lines) logBox.scrollTop = logBox.scrollHeight;
+	});
 </script>
 
 <div class="mb-6 flex items-center justify-between">
@@ -150,6 +193,103 @@
 							</ActionForm>
 						{/if}
 					</div>
+				{/if}
+			</div>
+		</section>
+
+		<!-- Robot -->
+		<section class="border-line bg-surface border">
+			<h2 class="font-display border-line border-b px-4 py-2.5 text-xs font-semibold tracking-wider uppercase">Robot</h2>
+			<div class="space-y-4 p-4">
+				{#if !data.printer.robot_gateway_url}
+					<p class="text-muted text-sm">No robot. Set the gateway URL in printer settings.</p>
+				{:else}
+					{#if manualJob?.status === 'running'}
+						{@const active = manualJob}
+						<div class="flex items-center gap-2 text-sm">
+							<Spinner />
+							<span>{JOB_VERB[active.kind].running}</span>
+							<span class="text-muted font-mono">{fmtElapsed(now - active.startedAt)}</span>
+						</div>
+						<ActionForm action="?/robotCancel" toast="Cancel robot job">
+							{#snippet children({ pending })}
+								<button
+									disabled={pending}
+									aria-busy={pending}
+									class="border-danger/40 text-danger hover:bg-danger/10 flex items-center gap-2 border px-3 py-1.5 text-sm transition-colors disabled:opacity-50"
+								>
+									{#if pending}<Spinner />{/if}
+									Cancel
+								</button>
+							{/snippet}
+						</ActionForm>
+					{:else}
+						<div class="flex flex-wrap gap-2">
+							<ActionForm
+								action="?/robotRemove"
+								toast="Robot removal"
+								confirm={() => window.confirm(`Trigger the robot arm on ${data.printer.name}? It will move.`)}
+							>
+								{#snippet children({ pending })}
+									<button
+										disabled={pending || printerBusy}
+										aria-busy={pending}
+										class="border-line hover:border-accent hover:text-accent flex items-center gap-2 border px-4 py-1.5 text-sm transition-colors disabled:opacity-50"
+									>
+										{#if pending}<Spinner />{/if}
+										Trigger removal
+									</button>
+								{/snippet}
+							</ActionForm>
+							<ActionForm
+								action="?/robotReturnToOrigin"
+								toast="Return to origin"
+								confirm={() =>
+									window.confirm('Drive the robot base back to the odometry origin? It will move across the floor.')}
+							>
+								{#snippet children({ pending })}
+									<button
+										disabled={pending}
+										aria-busy={pending}
+										class="border-line hover:border-accent hover:text-accent flex items-center gap-2 border px-4 py-1.5 text-sm transition-colors disabled:opacity-50"
+									>
+										{#if pending}<Spinner />{/if}
+										Return to origin
+									</button>
+								{/snippet}
+							</ActionForm>
+						</div>
+						<p class="text-muted text-xs">
+							{#if printerBusy}
+								Removal is unavailable mid-print — stop the print first. Return to origin only
+								drives the base, so it stays available.
+							{:else}
+								Removal runs the same pick-and-place task a batch uses after a part finishes.
+								Return to origin drives the base back to the odometry origin.
+							{/if}
+						</p>
+					{/if}
+
+					{#if manualJob}
+						{@const shown = manualJob}
+						<div class="space-y-1.5">
+							<div class="flex items-baseline justify-between gap-2">
+								<span class="text-muted font-mono text-[11px] tracking-wider uppercase">Gateway log</span>
+								{#if shown.status !== 'running'}
+									<span class="font-mono text-[11px] {jobTone}">
+										{JOB_VERB[shown.kind].done}
+										{shown.status}
+									</span>
+								{/if}
+							</div>
+							<pre
+								bind:this={logBox}
+								class="border-line bg-bg text-muted max-h-40 overflow-auto border p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">{shown
+									.logTail.length
+									? shown.logTail.join('\n')
+									: 'Waiting for the gateway…'}</pre>
+						</div>
+					{/if}
 				{/if}
 			</div>
 		</section>

@@ -29,19 +29,41 @@ const server = http.createServer((req, res) => {
 		req.on('end', () => {
 			const parsed = body ? JSON.parse(body) : {};
 			const shouldFail = url.searchParams.get('fail') === '1' || parsed?.params?.fail === 'true';
+			const kind = parsed.kind ?? 'pick_place';
 			const id = randomUUID();
 			const job = {
 				status: 'running',
 				started_at: new Date().toISOString(),
 				finished_at: null,
-				log_tail: [`task: ${parsed.task ?? ''}`, `keys: ${(parsed.gemini_api_keys ?? []).length}`]
+				log_tail:
+					kind === 'return_to_origin'
+						? [`[gateway] kind: ${kind}`, 'ros2 run gemini_pick_place_executor return_to_origin.py']
+						: [`[gateway] kind: ${kind}`, `task: ${parsed.task ?? ''}`, `keys: ${(parsed.gemini_api_keys ?? []).length}`]
 			};
 			jobs.set(id, job);
 			running = id;
+			// Dribble out lines so the UI's log window has something to follow.
+			const chatter = setInterval(() => {
+				if (job.status !== 'running') return clearInterval(chatter);
+				job.log_tail.push(
+					kind === 'return_to_origin'
+						? `[return_to_origin] driving, ${(Math.random() * 0.5).toFixed(3)} m to go`
+						: `[executor] step ${job.log_tail.length}`
+				);
+			}, 2000);
 			setTimeout(() => {
+				clearInterval(chatter);
 				job.status = shouldFail ? 'failed' : 'succeeded';
 				job.finished_at = new Date().toISOString();
-				job.log_tail.push(shouldFail ? 'Pick-and-place sequence aborted' : 'Pick-and-place sequence completed');
+				job.log_tail.push(
+					kind === 'return_to_origin'
+						? shouldFail
+							? '[return_to_origin] position drive: timeout'
+							: 'position: arrived (err=0.0041 m)'
+						: shouldFail
+							? 'Pick-and-place sequence aborted'
+							: 'Pick-and-place sequence completed'
+				);
 				running = null;
 			}, jobDurationSec * 1000);
 			json(res, 202, { job_id: id });

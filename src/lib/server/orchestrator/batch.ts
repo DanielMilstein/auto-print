@@ -12,7 +12,7 @@ import {
 import { sql } from '../db';
 import { recordEvent } from '../events';
 import { getGeminiApiKeys } from '../settings';
-import { cancelRemoval, getRemovalJob, startRemoval } from '../robot';
+import { cancelRemoval, DEFAULT_REMOVAL_TASK, getRemovalJob, startRemoval } from '../robot';
 import { storage } from '../storage';
 import type { JobLifecycleListener } from './watcher';
 
@@ -174,7 +174,7 @@ async function startPartRemoval(printer: Printer, batch: BatchRun): Promise<void
 	}
 	try {
 		const robotJobId = await startRemoval(printer.robot_gateway_url, {
-			task: printer.robot_task || 'pick the printed part off the print bed and place it in the bin',
+			task: printer.robot_task || DEFAULT_REMOVAL_TASK,
 			params: printer.robot_params_json,
 			geminiApiKeys: await getGeminiApiKeys()
 		});
