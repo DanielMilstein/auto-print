@@ -82,8 +82,22 @@ export async function startReturnToOrigin(gatewayUrl: string): Promise<string> {
 	});
 }
 
+/**
+ * Polls one job. Throws on transport trouble so callers keep retrying, except
+ * for a 404: the gateway holds its jobs in memory, so an id it does not know
+ * belongs to a job lost in a gateway restart. That job is over, and it is
+ * reported here as failed rather than left to the pollers' give-up timers.
+ */
 export async function getRemovalJob(gatewayUrl: string, jobId: string): Promise<RobotJob> {
 	const res = await fetch(`${gatewayUrl}/jobs/${jobId}`, { signal: AbortSignal.timeout(10_000) });
+	if (res.status === 404) {
+		return {
+			jobId,
+			status: 'failed',
+			finishedAt: new Date().toISOString(),
+			logTail: ['[autoprint] the gateway no longer knows this job — it probably restarted mid-run']
+		};
+	}
 	if (!res.ok) throw new Error(`Robot gateway returned ${res.status}`);
 	const data = await res.json();
 	return {
